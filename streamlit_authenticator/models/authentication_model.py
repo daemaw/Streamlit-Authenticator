@@ -371,8 +371,7 @@ class AuthenticationModel:
             usr_result = self.connection.query("Select email_address, first_name, password, user_id, login_attempts, logged_in FROM users WHERE email_address = :username;", params={'username': token['username']}, ttl=1)
             if not token['username'] in usr_result['email_address'].values:
                 raise LoginError('User not authorized')
-            usr_result = usr_result[usr_result['email_address'] == username]
-            
+            usr_result = usr_result[usr_result['email_address'] == token['username']]
             st.session_state['email'], st.session_state['name'], st.session_state['roles'] = \
                 usr_result['email_address'].values[0], usr_result['first_name'].values[0], None
             st.session_state['authentication_status'] = True
