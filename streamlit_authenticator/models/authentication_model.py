@@ -10,7 +10,8 @@ Libraries imported:
 from typing import Any, Callable, Dict, List, Optional
 
 import streamlit as st
-
+from streamlit.connections import BaseConnection
+from pandas import DataFrame
 from ..models.oauth2 import GoogleModel
 from ..models.oauth2 import MicrosoftModel
 from .. import params
@@ -28,15 +29,14 @@ class AuthenticationModel:
     This class executes the logic for the login, logout, register user, reset password, 
     forgot password, forgot username, and modify user details widgets.
     """
-    def __init__(self, credentials: Optional[dict]=None, auto_hash: bool=True,
-                 path: Optional[str]=None):
+    def __init__(self, connection: BaseConnection, auto_hash: bool=True):
         """
         Create a new instance of "AuthenticationModel".
 
         Parameters
         ----------
-        credentials: dict
-            Dictionary of usernames, names, passwords, emails, and other user data.  
+        connection: BaseConnection
+            Streamlit connection pointing to the database with user credentials.  
         auto_hash: bool
             Automatic hashing requirement for the passwords, 
             True: plain text passwords will be automatically hashed,
@@ -44,31 +44,7 @@ class AuthenticationModel:
         path: str
             File path of the config file.
         """
-        self.path = path
-        if self.path:
-            self.config = Helpers.read_config_file(path)
-            self.credentials = self.config['credentials']
-        else:
-            self.credentials = credentials
-        if self.credentials['usernames']:
-            self.credentials['usernames'] = {
-                key.lower(): value
-                for key, value in self.credentials['usernames'].items()
-                }
-            if auto_hash:
-                if len(self.credentials['usernames']) > params.AUTO_HASH_MAX_USERS:
-                    print(f"""Auto hashing in progress. To avoid runtime delays, please manually
-                          pre-hash all plain text passwords in the credentials using the
-                          Hasher.hash_passwords function, and set auto_hash=False for the
-                          Authenticate class. For more information please refer to
-                          {params.AUTO_HASH_MAX_USERS_LINK}.""")
-                for username, _ in self.credentials['usernames'].items():
-                    if 'password' in self.credentials['usernames'][username] and \
-                        not Hasher.is_hash(self.credentials['usernames'][username]['password']):
-                        self.credentials['usernames'][username]['password'] = \
-                        Hasher.hash(self.credentials['usernames'][username]['password'])
-        else:
-            self.credentials['usernames'] = {}
+        self.connection = connection
         if 'name' not in st.session_state:
             st.session_state['name'] = None
         if 'authentication_status' not in st.session_state:
@@ -81,7 +57,7 @@ class AuthenticationModel:
             st.session_state['roles'] = None
         if 'logout' not in st.session_state:
             st.session_state['logout'] = None
-    def check_credentials(self, username: str, password: str) -> bool:
+    def check_credentials(self, username: str, password: str, usr_result: DataFrame) -> bool:
         """
         Checks the validity of the entered credentials.
 
@@ -100,12 +76,12 @@ class AuthenticationModel:
             True: correct credentials,
             False: incorrect credentials.
         """
-        if username not in self.credentials['usernames']:
+        if username not in usr_result['email_address'].values:
             return False
         try:
-            if Hasher.check_pw(password, self.credentials['usernames'][username]['password']):
+            if Hasher.check_pw(password, usr_result[usr_result['email_address'] == username]['password'].values[0]):
                 return True
-            self._record_failed_login_attempts(username)
+            self._record_failed_login_attempts(username, usr_result[usr_result['email_address'] == username]['login_attempts'].values[0])
             return False
         except (TypeError, ValueError) as e:
             print(f'{e} please hash all plain text passwords')
@@ -119,11 +95,8 @@ class AuthenticationModel:
         int
             Number of users logged in concurrently.
         """
-        concurrent_users = 0
-        for username, _ in self.credentials['usernames'].items():
-            if 'logged_in' in self.credentials['usernames'][username] and \
-                self.credentials['usernames'][username]['logged_in']:
-                concurrent_users += 1
+        active_usrs = self.connection.query("Select Count(*) FROM users WHERE logged_in = 1;")
+        concurrent_users = active_usrs[0][0]
         return concurrent_users
     def _credentials_contains_value(self, value: str) -> bool:
         """
@@ -368,46 +341,43 @@ class AuthenticationModel:
             False: incorrect credentials.
         """
         if username:
-            if self.check_credentials(username, password):
+            usr_result = self.connection.query("Select email_address, first_name, password, user_id, login_attempts, logged_in FROM users WHERE email_address = :username;", params={'username': username}, ttl=1)
+            if self.check_credentials(username, password, usr_result):
+                usr_result = usr_result[usr_result['email_address'] == username]
                 if isinstance(max_concurrent_users, int) and self._count_concurrent_users() > \
                     max_concurrent_users - 1:
                     raise LoginError('Maximum number of concurrent users exceeded')
                 if isinstance(max_login_attempts, int) and \
-                    'failed_login_attempts' in self.credentials['usernames'][username] and \
-                    self.credentials['usernames'][username]['failed_login_attempts'] >= \
+                    usr_result['login_attempts'] >= \
                         max_login_attempts:
                     raise LoginError('Maximum number of login attempts exceeded')
-                if single_session and self.credentials['usernames'][username]['logged_in']:
+                if single_session and usr_result['logged_in']:
                     raise LoginError('Cannot log in multiple sessions')
-                st.session_state['email'], st.session_state['name'], st.session_state['roles'] = \
-                    self._get_user_variables(username)
+                st.session_state['email'], st.session_state['name'], st.session_state['user_id'] = \
+                    usr_result['email_address'].values[0], usr_result['first_name'].values[0], usr_result['user_id'].values[0]
                 st.session_state['authentication_status'] = True
                 st.session_state['username'] = username
-                self._record_failed_login_attempts(username, reset=True)
-                self.credentials['usernames'][username]['logged_in'] = True
+                # self._record_failed_login_attempts(username, reset=True)
+                Helpers.update_db(self.connection, "UPDATE users SET logged_in = 1, login_attempts = 0 WHERE email_address = :user;", {'user':username})
                 if 'password_hint' in st.session_state:
                     del st.session_state['password_hint']
-                if self.path:
-                    Helpers.update_config_file(self.path, 'credentials', self.credentials)
+                
                 if callback:
                     callback({'widget': 'Login', 'username': username})
                 return True
             st.session_state['authentication_status'] = False
-            if username in self.credentials['usernames'] and \
-                'password_hint' in self.credentials['usernames'][username]:
-                st.session_state['password_hint'] = \
-                    self.credentials['usernames'][username]['password_hint']
             return False
         if token:
-            if not token['username'] in self.credentials['usernames']:
+            usr_result = self.connection.query("Select email_address, first_name, password, user_id, login_attempts, logged_in FROM users WHERE email_address = :username;", params={'username': token['username']}, ttl=1)
+            if not token['username'] in usr_result['email_address'].values:
                 raise LoginError('User not authorized')
+            usr_result = usr_result[usr_result['email_address'] == username]
+            
             st.session_state['email'], st.session_state['name'], st.session_state['roles'] = \
-                self._get_user_variables(token['username'])
+                usr_result['email_address'].values[0], usr_result['first_name'].values[0], None
             st.session_state['authentication_status'] = True
             st.session_state['username'] = token['username']
-            self.credentials['usernames'][token['username']]['logged_in'] = True
-            if self.path:
-                Helpers.update_config_file(self.path, 'credentials', self.credentials)
+            Helpers.update_db(self.connection, "UPDATE users SET logged_in = 1, login_attempts = 0 WHERE email_address = :user", {'user': username})
         return None
     def logout(self, callback: Optional[Callable]=None):
         """
@@ -418,18 +388,18 @@ class AuthenticationModel:
         callback: callable, optional
             Callback function that will be invoked on button press.
         """
-        self.credentials['usernames'][st.session_state['username']]['logged_in'] = False
+        qry = "UPDATE users SET logged_in = null WHERE email_address = :user;"
+        prm = {'user' : st.session_state['username']}
         st.session_state['logout'] = True
         st.session_state['name'] = None
         st.session_state['username'] = None
         st.session_state['authentication_status'] = None
         st.session_state['email'] = None
         st.session_state['roles'] = None
-        if self.path:
-            Helpers.update_config_file(self.path, 'credentials', self.credentials)
+        Helpers.update_db(self.connection, query=qry, params=prm)
         if callback:
             callback({'widget': 'Logout'})
-    def _record_failed_login_attempts(self, username: str, reset: bool=False):
+    def _record_failed_login_attempts(self, username: str, prev_attempts: int, reset: bool=False):
         """
         Records the number of failed login attempts for a given username.
         
@@ -442,14 +412,16 @@ class AuthenticationModel:
             True: number of failed login attempts for the user will be reset to 0, 
             False: number of failed login attempts for the user will be incremented.
         """
-        if 'failed_login_attempts' not in self.credentials['usernames'][username]:
-            self.credentials['usernames'][username]['failed_login_attempts'] = 0
+        
+        params = {'user': username}
         if reset:
-            self.credentials['usernames'][username]['failed_login_attempts'] = 0
+            qry = "UPDATE users SET login_attempts = 0 WHERE email_address = :user;"
         else:
-            self.credentials['usernames'][username]['failed_login_attempts'] += 1
-        if self.path:
-            Helpers.update_config_file(self.path, 'credentials', self.credentials)
+            prev_attempts = prev_attempts + 1
+            qry = "UPDATE users SET login_attempts = :atps WHERE email_address = :user;"
+            params['atps'] = prev_attempts
+        
+        Helpers.update_db(self.connection, qry, params)
     def _register_credentials(self, username: str, first_name: str, last_name: str,
                               password: str, email: str, password_hint: str,
                               roles: Optional[List[str]]=None):

@@ -10,6 +10,7 @@ Libraries imported:
 
 import time
 from typing import Any, Callable, Dict, List, Optional, Union
+from streamlit.connections import BaseConnection
 
 import streamlit as st
 
@@ -22,7 +23,7 @@ class Authenticate:
     This class renders login, logout, register user, reset password, forgot password, 
     forgot username, and modify user details widgets.
     """
-    def __init__(self, credentials: Union[dict, str], cookie_name: str='some_cookie_name',
+    def __init__(self, connection: BaseConnection, cookie_name: str='some_cookie_name',
                  cookie_key: str='some_key', cookie_expiry_days: float=30.0,
                  validator: Optional[Validator]=None, auto_hash: bool=True,
                  **kwargs: Optional[Dict[str, Any]]):
@@ -31,9 +32,8 @@ class Authenticate:
 
         Parameters
         ----------
-        credentials: dict, str
-            Dictionary of usernames, names, passwords, emails, and other user data; or path
-            pointing to the location of the config file.
+        connection: BaseConnection
+            Streamlit connection pointing to the database with user credentials.
         cookie_name: str
             Name of the re-authentication cookie stored on the client's browser for password-less 
             re-authentication.
@@ -56,15 +56,12 @@ class Authenticate:
                                    removed from the Authenticate class and added directly to the
                                    'register_user' function. For further information please refer to
                                    {params.REGISTER_USER_LINK}.""")
-        self.path = credentials if isinstance(credentials, str) else None
         self.cookie_controller          =   CookieController(cookie_name,
                                                              cookie_key,
-                                                             cookie_expiry_days,
-                                                             self.path)
-        self.authentication_controller  =   AuthenticationController(credentials,
+                                                             cookie_expiry_days)
+        self.authentication_controller  =   AuthenticationController(connection,
                                                                      validator,
-                                                                     auto_hash,
-                                                                     self.path)
+                                                                     auto_hash)
         self.attrs = kwargs
     def forgot_password(self, location: str='main', fields: Optional[Dict[str, str]]=None,
                         captcha: bool=False, clear_on_submit: bool=False,
@@ -309,8 +306,8 @@ class Authenticate:
                                                             callback=callback, captcha=captcha,
                                                             entered_captcha=entered_captcha):
                         self.cookie_controller.set_cookie()
-                        if self.path and self.cookie_controller.get_cookie():
-                            st.rerun()
+                        #if self.cookie_controller.get_cookie():
+                        #    st.rerun()
     def logout(self, button_name: str='Logout', location: str='main', key: str='Logout',
                callback: Optional[Callable]=None):
         """

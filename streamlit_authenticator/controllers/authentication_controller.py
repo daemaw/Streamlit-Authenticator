@@ -9,6 +9,7 @@ Libraries imported:
 
 from typing import Any, Callable, Dict, List, Optional
 import streamlit as st
+from streamlit.connections import BaseConnection
 
 from ..models import AuthenticationModel
 from ..utilities import (ForgotError,
@@ -24,15 +25,15 @@ class AuthenticationController:
     This class controls the requests for the login, logout, register user, reset password, 
     forgot password, forgot username, and modify user details widgets.
     """
-    def __init__(self, credentials: Optional[dict]=None, validator: Optional[Validator]=None,
-                 auto_hash: bool=True, path: Optional[str]=None):
+    def __init__(self, connection: BaseConnection, validator: Optional[Validator]=None,
+                 auto_hash: bool=True):
         """
         Create a new instance of "AuthenticationController".
 
         Parameters
         ----------
-        credentials: dict
-            Dictionary of usernames, names, passwords, emails, and other user data.       
+        connection: BaseConnection
+            Streamlit connection pointing to the database with user credentials.       
         validator: Validator, optional
             Validator object that checks the validity of the username, name, and email fields.
         auto_hash: bool
@@ -42,7 +43,7 @@ class AuthenticationController:
         path: str
             File path of the config file.
         """
-        self.authentication_model = AuthenticationModel(credentials, auto_hash, path)
+        self.authentication_model = AuthenticationModel(connection, auto_hash)
         self.validator = validator if validator is not None else Validator()
     def _check_captcha(self, captcha_name: str, exception: Exception, entered_captcha: str):
         """

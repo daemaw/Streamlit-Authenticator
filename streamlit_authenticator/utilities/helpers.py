@@ -16,6 +16,9 @@ import string
 import random
 import streamlit as st
 from captcha.image import ImageCaptcha
+from streamlit.connections import BaseConnection
+from typing import Optional
+from sqlalchemy.sql import text
 
 class Helpers:
     """
@@ -115,21 +118,19 @@ class Helpers:
         with open(path, 'w', encoding='utf-8') as file:
             yaml.dump(config, file, default_flow_style=False)
     @classmethod
-    def update_config_file(cls, path: str, key: str, items: dict) -> tuple:
+    def update_db(cls, connection: BaseConnection, query: str, params: Optional[dict]) -> tuple:
         """
-        Write to the config file.
+        Write to the database.
 
         Parameters
         ----------
-        path: str
-            File path of the config file.
-        key: str
-            Key to update.
-        items: dict
-            Items to update.
+        connection: BaseConnection
+            A Streamlit connection object.
+        query: str
+            update string.
+        params: dict
+            data parameters to set in the query
         """
-        with open(path, 'r', encoding='utf-8') as file:
-            config = yaml.load(file, Loader=SafeLoader)
-        config[key] = items
-        with open(path, 'w', encoding='utf-8') as file:
-            yaml.dump(config, file, default_flow_style=False)
+        with connection.session as session:
+            session.execute(text(query), params)
+            session.commit()

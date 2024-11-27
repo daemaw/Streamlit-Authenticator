@@ -16,7 +16,7 @@ class CookieController:
     including deleting, getting, and setting the cookie.
     """
     def __init__(self, cookie_name: Optional[str]=None, cookie_key: Optional[str]=None,
-                 cookie_expiry_days: Optional[float]=None, path: Optional[str]=None):
+                 cookie_expiry_days: Optional[float]=None):
         """
         Create a new instance of "CookieController".
 
@@ -34,8 +34,7 @@ class CookieController:
         """
         self.cookie_model = CookieModel(cookie_name,
                                         cookie_key,
-                                        cookie_expiry_days,
-                                        path)
+                                        cookie_expiry_days)
     def delete_cookie(self):
         """
         Deletes the re-authentication cookie.
