@@ -372,8 +372,8 @@ class AuthenticationModel:
             if not token['username'] in usr_result['email_address'].values:
                 raise LoginError('User not authorized')
             usr_result = usr_result[usr_result['email_address'] == token['username']]
-            st.session_state['email'], st.session_state['name'], st.session_state['roles'] = \
-                usr_result['email_address'].values[0], usr_result['first_name'].values[0], None
+            st.session_state['email'], st.session_state['name'], st.session_state['user_id'] = \
+                usr_result['email_address'].values[0], usr_result['first_name'].values[0], usr_result['user_id'].values[0]
             st.session_state['authentication_status'] = True
             st.session_state['username'] = token['username']
             Helpers.update_db(self.connection, "UPDATE users SET logged_in = 1, login_attempts = 0 WHERE email_address = :user", {'user': username})
