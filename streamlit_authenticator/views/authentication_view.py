@@ -340,7 +340,7 @@ class Authenticate:
             if st.session_state['authentication_status']:
                 self.authentication_controller.logout()
                 self.cookie_controller.delete_cookie()
-    def register_user(self, location: str='main', pre_authorized: Optional[List[str]]=None,
+    def register_user(self, location: str='main', use_hint: bool=True, pre_authorized: Optional[List[str]]=None,
                       domains: Optional[List[str]]=None, fields: Optional[Dict[str, str]]=None,
                       captcha: bool=True, roles: Optional[List[str]]=None,
                       merge_username_email: bool=False, clear_on_submit: bool=False,
@@ -352,6 +352,8 @@ class Authenticate:
         ----------
         location: str
             Location of the register new user widget i.e. main or sidebar.
+        use_hint: bool
+            Password hint requirement for the register user widget.
         pre-authorized: list, optional
             List of emails of unregistered users who are authorized to register. 
         domains: list, optional
@@ -427,8 +429,11 @@ class Authenticate:
                                        help=password_instructions)
         new_password_repeat = col2_2.text_input('Repeat password' if 'Repeat password' not in fields
                                               else fields['Repeat password'], type='password')
-        password_hint = register_user_form.text_input('Password hint' if 'Password hint' not in
-                                                      fields else fields['Password hint'])
+        if use_hint:
+            password_hint = register_user_form.text_input('Password hint' if 'Password hint' not in
+                                                        fields else fields['Password hint'])
+        else:
+            password_hint = None
         entered_captcha = None
         if captcha:
             entered_captcha = register_user_form.text_input('Captcha' if 'Captcha' not in fields

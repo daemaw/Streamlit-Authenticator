@@ -234,7 +234,7 @@ class AuthenticationController:
         self.authentication_model.logout(callback)
     def register_user(self, new_first_name: str, new_last_name: str, new_email: str,
                       new_username: str, new_password: str, new_password_repeat: str,
-                      password_hint: str, pre_authorized: Optional[List[str]]=None,
+                      password_hint: Optional[str]=None, pre_authorized: Optional[List[str]]=None,
                       domains: Optional[List[str]]=None, roles: Optional[List[str]]=None,
                       callback: Optional[Callable]=None, captcha: bool=False,
                       entered_captcha: Optional[str]=None) -> tuple:
@@ -289,7 +289,8 @@ class AuthenticationController:
         new_username = new_username.lower().strip()
         new_password = new_password.strip()
         new_password_repeat = new_password_repeat.strip()
-        password_hint = password_hint.strip()
+        if password_hint:
+            password_hint = password_hint.strip()
         if not self.validator.validate_name(new_first_name):
             raise RegisterError('First name is not valid')
         if not self.validator.validate_name(new_last_name):
@@ -306,8 +307,6 @@ class AuthenticationController:
             raise RegisterError('Password/repeat password fields cannot be empty')
         if new_password != new_password_repeat:
             raise RegisterError('Passwords do not match')
-        if not self.validator.validate_length(password_hint, 1):
-            raise RegisterError('Password hint cannot be empty')
         if not self.validator.validate_password(new_password):
             raise RegisterError('Password does not meet criteria')
         if roles and not isinstance(roles, list):

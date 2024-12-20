@@ -114,7 +114,8 @@ class AuthenticationModel:
             True: value present, 
             False value absent.
         """
-        return any(value in d.values() for d in self.credentials['usernames'].values())
+        count = self.connection.query("Select count(*) FROM users WHERE email_address = :username;", params={'username': value}, ttl=1)
+        return count.iloc[0][0] > 0
     def forgot_password(self, username: str, callback: Optional[Callable]=None) -> tuple:
         """
         Creates a new random password for the user.
@@ -422,7 +423,7 @@ class AuthenticationModel:
         
         Helpers.update_db(self.connection, qry, params)
     def _register_credentials(self, username: str, first_name: str, last_name: str,
-                              password: str, email: str, password_hint: str,
+                              password: str, email: str, password_hint: Optional[str]=None,
                               roles: Optional[List[str]]=None):
         """
         Adds the new user's information to the credentials dictionary.
@@ -444,14 +445,10 @@ class AuthenticationModel:
         roles: list, optional
             User roles for registered users.
         """
-        self.credentials['usernames'][username] = {'email': email, 'logged_in': False,
-                                                   'first_name': first_name,
-                                                   'last_name': last_name,
-                                                   'password': Hasher.hash(password),
-                                                   'password_hint': password_hint,
-                                                   'roles': roles}
-        if self.path:
-            Helpers.update_config_file(self.path, 'credentials', self.credentials)
+        
+        Helpers.update_db(self.connection, "Insert into users (email_address, first_name, last_name, password, login_attempts, logged_in) VALUES \
+                            (:email, :first_name, :last_name, :password, 0, null);",
+                            {'email': email, 'first_name': first_name, 'last_name': last_name, 'password': Hasher.hash(password)})
     def register_user(self, new_first_name: str, new_last_name: str, new_email: str,
                       new_username: str, new_password: str, password_hint: str,
                       pre_authorized: Optional[List[str]]=None,
@@ -492,20 +489,13 @@ class AuthenticationModel:
         """
         if self._credentials_contains_value(new_email):
             raise RegisterError('Email already taken')
-        if new_username in self.credentials['usernames']:
+        if (self.connection.query("Select Count(*) FROM users WHERE email_address = :username;", params={'username': new_username}, ttl=1)).iloc[0][0] > 0:
             raise RegisterError('Username/email already taken')
-        if not pre_authorized and self.path:
-            try:
-                pre_authorized = self.config['pre-authorized']['emails']
-            except (KeyError, TypeError):
-                pre_authorized = None
         if pre_authorized:
             if new_email in pre_authorized:
                 self._register_credentials(new_username, new_first_name, new_last_name, new_password,
                                            new_email, password_hint, roles)
                 pre_authorized.remove(new_email)
-                if self.path:
-                    Helpers.update_config_file(self.path, 'pre-authorized', pre_authorized)
                 if callback:
                     callback({'widget': 'Register user', 'new_name': new_first_name,
                               'new_last_name': new_last_name, 'new_email': new_email,
