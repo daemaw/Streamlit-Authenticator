@@ -57,7 +57,7 @@ class AuthenticationModel:
             st.session_state['roles'] = None
         if 'logout' not in st.session_state:
             st.session_state['logout'] = None
-    def check_credentials(self, username: str, password: str, usr_result: DataFrame) -> bool:
+    def check_credentials(self, username: str, password: str, usr_result: Optional[DataFrame] = None) -> bool:
         """
         Checks the validity of the entered credentials.
 
@@ -76,6 +76,8 @@ class AuthenticationModel:
             True: correct credentials,
             False: incorrect credentials.
         """
+        if usr_result is None:
+            usr_result = self.connection.query("Select email_address, login_attempts, password FROM users WHERE email_address = :username", params={'username': username}, ttl=1)
         if username not in usr_result['email_address'].values:
             return False
         try:
@@ -399,7 +401,7 @@ class AuthenticationModel:
         Helpers.update_db(self.connection, query=qry, params=prm)
         if callback:
             callback({'widget': 'Logout'})
-    def _record_failed_login_attempts(self, username: str, prev_attempts: int, reset: bool=False):
+    def _record_failed_login_attempts(self, username: str, prev_attempts: Optional[int] = None, reset: bool=False):
         """
         Records the number of failed login attempts for a given username.
         
@@ -533,8 +535,8 @@ class AuthenticationModel:
             State of resetting the password, 
             True: password reset successfully.
         """
-        if self._is_guest_user(username):
-            raise ResetError('Guest user cannot reset password')
+        #if self._is_guest_user(username):
+        #    raise ResetError('Guest user cannot reset password')
         if not self.check_credentials(username, password):
             raise CredentialsError('password')
         self._update_password(username, new_password)
@@ -588,9 +590,7 @@ class AuthenticationModel:
         password: str
             Updated plain text password.
         """
-        self.credentials['usernames'][username]['password'] = Hasher.hash(password)
-        if self.path:
-            Helpers.update_config_file(self.path, 'credentials', self.credentials)
+        Helpers.update_db(self.connection, "UPDATE users SET password = :password WHERE email_address = :user;", {"password": Hasher.hash(password), "user": username})
     def update_user_details(self, username: str, field: str, new_value: str,
                             callback: Optional[Callable]=None) -> bool:
         """
